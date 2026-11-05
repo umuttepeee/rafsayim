@@ -50,7 +50,7 @@ if resim is not None:
             """
             
             # Google Cloud'un belirttiği ?key= parametreli resmi endpoint
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key={API_KEY}"
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={API_KEY}"
             
             headers = {"Content-Type": "application/json"}
             payload = {
