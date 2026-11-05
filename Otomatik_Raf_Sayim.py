@@ -37,7 +37,7 @@ if resim is not None:
     st.image(img, caption="İşlenecek Görsel", use_container_width=True)
     
     if st.button("Analiz Et"):
-        with st.spinner("Yapay zeka ürünleri sayıyor... Lütfen bekleyin."):
+        with st.spinner("Modeller doğrulanıyor ve ürünler sayılıyor..."):
             tampon = io.BytesIO()
             img.convert("RGB").save(tampon, format="JPEG")
             img_b64 = base64.b64encode(tampon.getvalue()).decode("utf-8")
@@ -65,20 +65,35 @@ if resim is not None:
                 ]
             }
             
-            # 503 yoğunluk ve model kapasitesi sorunlarını aşmak için alternatifli model listesi
-            modeller = ["gemini-flash-latest", "gemini-3.8-flash", "gemini-3.8-pro"]
-            
-            cevap_json = {}
-            basarili = False
-            son_hata_kodu = None
-            
             try:
-                for model_adi in modeller:
-                    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_adi}:generateContent?key={API_KEY}"
+                # 1. Adım: API Anahtarınızın yetkili olduğu modelleri Google'dan doğrudan çek
+                list_url = f"https://generativelanguage.googleapis.com/v1beta/models?key={API_KEY}"
+                list_res = requests.get(list_url, timeout=30)
+                
+                aktif_modeller = []
+                if list_res.status_code == 200:
+                    modeller_verisi = list_res.json().get("models", [])
+                    # generateContent destekleyen ve gemini içeren modelleri filtrele
+                    for m in modeller_verisi:
+                        methods = m.get("supportedGenerationMethods", [])
+                        m_name = m.get("name", "")
+                        if "generateContent" in methods and "gemini" in m_name:
+                            aktif_modeller.append(m_name)
+                
+                # Eğer liste çekilemezse varsayılan model havuzunu kullan
+                if not aktif_modeller:
+                    aktif_modeller = ["models/gemini-2.5-flash", "models/gemini-flash-latest"]
+
+                cevap_json = {}
+                basarili = False
+                son_hata = ""
+
+                # 2. Adım: Yetkili modelleri sırayla dene
+                for model_tam_adi in aktif_modeller:
+                    url = f"https://generativelanguage.googleapis.com/v1beta/{model_tam_adi}:generateContent?key={API_KEY}"
                     
                     for deneme in range(2):
                         response = requests.post(url, headers=headers, json=payload, timeout=60)
-                        son_hata_kodu = response.status_code
                         
                         try:
                             cevap_json = response.json()
@@ -92,14 +107,14 @@ if resim is not None:
                             time.sleep(2)
                             continue
                         else:
+                            son_hata = cevap_json.get("error", {}).get("message", f"HTTP {response.status_code}")
                             break
                             
                     if basarili:
                         break
                 
                 if not basarili:
-                    hata_mesaji = cevap_json.get("error", {}).get("message", "Sunucu yoğunluğu devam ediyor.")
-                    st.error(f"API Hatası ({son_hata_kodu}): {hata_mesaji}")
+                    st.error(f"API Hatası: {son_hata}")
                 else:
                     sonuc_metni = cevap_json["candidates"][0]["content"]["parts"][0]["text"]
                     sonuc_metni = sonuc_metni.replace("```json", "").replace("```", "").strip()
