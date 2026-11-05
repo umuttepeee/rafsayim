@@ -5,12 +5,13 @@ import requests
 import pandas as pd
 from PIL import Image
 import io
+import time
 
 # 1. API Anahtarını Alma
 try:
     API_KEY = st.secrets["GEMINI_API_KEY"]
 except Exception:
-    API_KEY = "kendimasaüstüuygulamalarımdaapikeyimburayagelecek>>umut"
+    API_KEY = "umutapiapplication"
 
 st.title("📸 Otomatik Raf Sayım Aracı")
 st.write("Markaları ve ön yüz sayılarını yapay zeka ile anında tespit edin.")
@@ -37,8 +38,6 @@ if resim is not None:
     
     if st.button("Analiz Et"):
         with st.spinner("Yapay zeka ürünleri sayıyor... Lütfen bekleyin."):
-            
-            # Görseli base64 formatına çevir
             tampon = io.BytesIO()
             img.convert("RGB").save(tampon, format="JPEG")
             img_b64 = base64.b64encode(tampon.getvalue()).decode("utf-8")
@@ -49,9 +48,7 @@ if resim is not None:
             [{"marka": "MarkaAdı", "on_yuz_sayisi": 0}]
             """
             
-            # Google Cloud'un belirttiği ?key= parametreli resmi endpoint
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={API_KEY}"
-            
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key={API_KEY}"
             headers = {"Content-Type": "application/json"}
             payload = {
                 "contents": [
@@ -70,11 +67,24 @@ if resim is not None:
             }
             
             try:
-                response = requests.post(url, headers=headers, json=payload, timeout=60)
-                cevap_json = response.json()
+                # 503 yoğunluk hatalarına karşı 3 kez otomatik tekrar deneme mekanizması
+                max_deneme = 3
+                bekleme = 2
+                cevap_json = {}
+                
+                for deneme in range(max_deneme):
+                    response = requests.post(url, headers=headers, json=payload, timeout=60)
+                    cevap_json = response.json()
+                    
+                    if response.status_code == 503 and deneme < max_deneme - 1:
+                        time.sleep(bekleme)
+                        bekleme *= 2
+                        continue
+                    break
                 
                 if response.status_code != 200:
-                    st.error(f"API Hatası ({response.status_code}): {cevap_json.get('error', {}).get('message', 'Bilinmeyen hata')}")
+                    hata_mesaji = cevap_json.get("error", {}).get("message", "Bilinmeyen hata")
+                    st.error(f"API Hatası ({response.status_code}): {hata_mesaji}")
                 else:
                     sonuc_metni = cevap_json["candidates"][0]["content"]["parts"][0]["text"]
                     sonuc_metni = sonuc_metni.replace("```json", "").replace("```", "").strip()
