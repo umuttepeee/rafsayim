@@ -48,7 +48,6 @@ if resim is not None:
             [{"marka": "MarkaAdı", "on_yuz_sayisi": 0}]
             """
             
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key={API_KEY}"
             headers = {"Content-Type": "application/json"}
             payload = {
                 "contents": [
@@ -66,25 +65,41 @@ if resim is not None:
                 ]
             }
             
+            # 503 yoğunluk ve model kapasitesi sorunlarını aşmak için alternatifli model listesi
+            modeller = ["gemini-flash-latest", "gemini-3.8-flash", "gemini-3.8-pro"]
+            
+            cevap_json = {}
+            basarili = False
+            son_hata_kodu = None
+            
             try:
-                # 503 yoğunluk hatalarına karşı 3 kez otomatik tekrar deneme mekanizması
-                max_deneme = 3
-                bekleme = 2
-                cevap_json = {}
-                
-                for deneme in range(max_deneme):
-                    response = requests.post(url, headers=headers, json=payload, timeout=60)
-                    cevap_json = response.json()
+                for model_adi in modeller:
+                    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_adi}:generateContent?key={API_KEY}"
                     
-                    if response.status_code == 503 and deneme < max_deneme - 1:
-                        time.sleep(bekleme)
-                        bekleme *= 2
-                        continue
-                    break
+                    for deneme in range(2):
+                        response = requests.post(url, headers=headers, json=payload, timeout=60)
+                        son_hata_kodu = response.status_code
+                        
+                        try:
+                            cevap_json = response.json()
+                        except Exception:
+                            cevap_json = {"error": {"message": response.text}}
+                            
+                        if response.status_code == 200:
+                            basarili = True
+                            break
+                        elif response.status_code == 503:
+                            time.sleep(2)
+                            continue
+                        else:
+                            break
+                            
+                    if basarili:
+                        break
                 
-                if response.status_code != 200:
-                    hata_mesaji = cevap_json.get("error", {}).get("message", "Bilinmeyen hata")
-                    st.error(f"API Hatası ({response.status_code}): {hata_mesaji}")
+                if not basarili:
+                    hata_mesaji = cevap_json.get("error", {}).get("message", "Sunucu yoğunluğu devam ediyor.")
+                    st.error(f"API Hatası ({son_hata_kodu}): {hata_mesaji}")
                 else:
                     sonuc_metni = cevap_json["candidates"][0]["content"]["parts"][0]["text"]
                     sonuc_metni = sonuc_metni.replace("```json", "").replace("```", "").strip()
